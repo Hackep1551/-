@@ -26,7 +26,7 @@ class AddKitDinoDialog:
         # Создаем диалоговое окно
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Добавить динозавра в набор")
-        self.dialog.geometry("700x500")  # Увеличил размер диалога
+        self.dialog.geometry("900x700")  # Увеличил размер диалога
         self.dialog.configure(bg=DARK_SECONDARY)
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
@@ -34,8 +34,8 @@ class AddKitDinoDialog:
         
         # Центрируем окно относительно родителя
         if hasattr(parent, "winfo_x") and hasattr(parent, "winfo_width"):
-            x = parent.winfo_x() + (parent.winfo_width() - 700) // 2
-            y = parent.winfo_y() + (parent.winfo_height() - 500) // 2
+            x = parent.winfo_x() + (parent.winfo_width() - 900) // 2
+            y = parent.winfo_y() + (parent.winfo_height() - 700) // 2
             self.dialog.geometry(f"+{x}+{y}")
         
         self.setup_ui()

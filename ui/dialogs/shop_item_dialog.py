@@ -30,7 +30,7 @@ class ShopItemDialog:
         # Создаем диалоговое окно
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Добавить товар в магазин" if not item_id else f"Редактировать товар: {item_id}")
-        self.dialog.geometry("900x700")
+        self.dialog.geometry("1200x900")  # Увеличиваем размер окна
         self.dialog.configure(bg=DARK_SECONDARY)
         self.dialog.resizable(True, True)
         self.dialog.transient(parent)
@@ -39,8 +39,8 @@ class ShopItemDialog:
         # Центрируем окно относительно экрана
         screen_width = self.dialog.winfo_screenwidth()
         screen_height = self.dialog.winfo_screenheight()
-        x = (screen_width - 900) // 2
-        y = (screen_height - 700) // 2
+        x = (screen_width - 1200) // 2  # Обновляем координаты с учетом нового размера
+        y = (screen_height - 900) // 2
         self.dialog.geometry(f"+{x}+{y}")
         
         self.setup_ui()
@@ -496,16 +496,16 @@ class ItemDialog:
         # Создаем диалоговое окно
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Добавить предмет" if not item_data else "Редактировать предмет")
-        self.dialog.geometry("700x400")
+        self.dialog.geometry("900x600")  # Увеличиваем размер окна
         self.dialog.configure(bg=DARK_SECONDARY)
-        self.dialog.resizable(False, False)
+        self.dialog.resizable(True, True)
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
         # Центрируем окно относительно родителя
         if parent:
-            x = parent.winfo_x() + (parent.winfo_width() - 700) // 2
-            y = parent.winfo_y() + (parent.winfo_height() - 400) // 2
+            x = parent.winfo_x() + (parent.winfo_width() - 900) // 2
+            y = parent.winfo_y() + (parent.winfo_height() - 600) // 2
             self.dialog.geometry(f"+{x}+{y}")
         
         self.setup_ui()
@@ -532,6 +532,7 @@ class ItemDialog:
         search_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
         self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", self.search_items)
         search_entry = ttk.Entry(search_input_frame, textvariable=self.search_var, width=30)
         search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
@@ -545,7 +546,8 @@ class ItemDialog:
             results_frame, 
             columns=results_columns,
             show="headings",
-            selectmode="browse"
+            selectmode="browse",
+            height=15  # Увеличиваем высоту списка
         )
         
         # Заголовки колонок
@@ -553,14 +555,17 @@ class ItemDialog:
         self.results_table.heading("blueprint", text="Blueprint")
         
         # Настройка ширины колонок
-        self.results_table.column("name", width=200, anchor="w")
-        self.results_table.column("blueprint", width=400, anchor="w")
+        self.results_table.column("name", width=250, anchor="w")
+        self.results_table.column("blueprint", width=550, anchor="w")  # Увеличиваем ширину столбца
         
         # Добавляем прокрутку для таблицы
         results_scroll = ttk.Scrollbar(results_frame, orient="vertical", command=self.results_table.yview)
         self.results_table.configure(yscrollcommand=results_scroll.set)
         self.results_table.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         results_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Привязываем двойной клик для выбора предмета
+        self.results_table.bind("<Double-1>", self.select_item)
         
         # Вкладка ручного ввода
         manual_frame = tk.Frame(notebook, bg=DARK_SECONDARY)
@@ -574,7 +579,7 @@ class ItemDialog:
         bp_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
         self.blueprint_var = tk.StringVar()
-        bp_entry = ttk.Entry(bp_frame, textvariable=self.blueprint_var, width=50)
+        bp_entry = ttk.Entry(bp_frame, textvariable=self.blueprint_var, width=70)  # Увеличиваем ширину поля
         bp_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         # Общие параметры (отображаются внизу обеих вкладок)
@@ -637,11 +642,7 @@ class ItemDialog:
         )
         save_button.pack(side=tk.RIGHT)
         
-        # Привязываем события
-        self.search_var.trace_add("write", self.search_items)
-        self.results_table.bind("<Double-1>", self.select_item)
-        
-        # Заполняем таблицу результатов поиска
+        # Загружаем данные в таблицу
         self.populate_items_table()
     
     def populate_items_table(self):
@@ -653,16 +654,10 @@ class ItemDialog:
         # Получаем предметы из ArkData
         items = self.ark_data.get("items", {})
         
-        # Добавляем предметы в таблицу (макс. 100 для производительности)
-        count = 0
+        # Добавляем предметы в таблицу (отсортированные по алфавиту)
         for name, item_data in sorted(items.items()):
             blueprint = item_data.get("blueprint", "")
-            
             self.results_table.insert("", "end", values=(name, blueprint))
-            
-            count += 1
-            if count >= 100:
-                break
     
     def search_items(self, *args):
         """Поиск предметов по введенному тексту"""
@@ -672,7 +667,7 @@ class ItemDialog:
         for item in self.results_table.get_children():
             self.results_table.delete(item)
         
-        # Если поисковая строка пустая, показываем первые 100 предметов
+        # Если поисковая строка пустая, показываем все предметы
         if not search_text:
             self.populate_items_table()
             return
@@ -689,11 +684,10 @@ class ItemDialog:
         # Добавляем отфильтрованные предметы в таблицу
         for name, item_data in sorted(filtered_items.items()):
             blueprint = item_data.get("blueprint", "")
-            
             self.results_table.insert("", "end", values=(name, blueprint))
     
     def select_item(self, event=None):
-        """Обработчик выбора предмета из таблицы результатов"""
+        """Обработчик выбора предмета из таблицы"""
         # Получаем выбранный элемент
         selected_items = self.results_table.selection()
         if not selected_items:
@@ -701,9 +695,16 @@ class ItemDialog:
         
         # Получаем данные выбранного элемента
         selected_item = self.results_table.item(selected_items[0])
+        values = selected_item["values"]
         
-        # Устанавливаем Blueprint в соответствующее поле
-        self.blueprint_var.set(selected_item["values"][1])
+        if len(values) >= 2:
+            # Устанавливаем Blueprint в соответствующее поле
+            self.blueprint_var.set(values[1])
+        
+        # Переключаемся на вкладку ручного ввода чтобы пользователь видел выбранный Blueprint
+        notebook = self.dialog.children.get("!notebook")
+        if notebook:
+            notebook.select(1)  # Выбираем вторую вкладку (индекс 1)
     
     def fill_form_with_item_data(self):
         """Заполняет форму данными существующего предмета"""
