@@ -1,291 +1,401 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
-from ui.constants import *
+from tkinter import ttk, messagebox, simpledialog
 import json
 import os
+from ui.constants import *
 
 class AddShopItemDialog:
-    """Диалоговое окно для добавления или редактирования товара магазина"""
+    """Класс диалогового окна для добавления товара в магазин"""
     
-    def __init__(self, parent, ark_data, item_id=None, item_data=None):
+    def __init__(self, parent, ark_data=None, on_save=None, item_data=None, item_id=None):
         """
-        Инициализирует диалоговое окно
+        Инициализация диалогового окна
         
         Args:
-            parent: Родительское окно
-            ark_data: Данные из ArkData.json
-            item_id: ID товара (если редактирование)
-            item_data: Данные товара (если редактирование)
+            parent: родительское окно
+            ark_data: данные ARK для автозаполнения
+            on_save: функция обратного вызова при сохранении
+            item_data: данные о редактируемом предмете (если редактирование)
+            item_id: ID редактируемого предмета (если редактирование)
         """
         self.parent = parent
-        self.ark_data = ark_data
+        self.ark_data = ark_data or {}
+        self.on_save = on_save
+        self.item_data = item_data or {}
+        self.item_id = item_id
         self.result = None
         
-        # Создаем модальное окно
+        # Создаем диалоговое окно
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("Добавление товара" if item_id is None else "Редактирование товара")
-        self.dialog.geometry("700x500")
+        self.dialog.title("Добавить предмет в магазин" if not item_id else f"Редактировать предмет: {item_id}")
+        self.dialog.geometry("800x600")
         self.dialog.configure(bg=DARK_SECONDARY)
-        self.dialog.grab_set()  # Делаем окно модальным
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
         
-        # Создаем фрейм с прокруткой для вмещения всех элементов
+        # Центрируем окно относительно экрана
+        screen_width = self.dialog.winfo_screenwidth()
+        screen_height = self.dialog.winfo_screenheight()
+        x = (screen_width - 800) // 2
+        y = (screen_height - 600) // 2
+        self.dialog.geometry(f"+{x}+{y}")
+        
+        self.setup_ui()
+        
+        # Если есть данные для редактирования, заполняем поля
+        if self.item_data:
+            self.fill_form_with_item_data()
+    
+    def setup_ui(self):
+        """Настройка пользовательского интерфейса"""
+        # Основной контейнер с прокруткой
         main_frame = tk.Frame(self.dialog, bg=DARK_SECONDARY)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=PADDING_MEDIUM, pady=PADDING_MEDIUM)
         
-        # Создаем контейнер для элементов формы
-        form_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
-        form_frame.pack(fill=tk.BOTH, expand=True, padx=PADDING_MEDIUM, pady=PADDING_MEDIUM)
+        # ID предмета (только если добавляем новый)
+        if not self.item_id:
+            id_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+            id_frame.pack(fill=tk.X, pady=PADDING_SMALL)
+            
+            id_label = tk.Label(id_frame, text="ID предмета:", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
+            id_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
+            
+            self.id_var = tk.StringVar()
+            id_entry = ttk.Entry(id_frame, textvariable=self.id_var, width=30)
+            id_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        else:
+            # Если редактируем существующий предмет, создаем поле для нового ID
+            id_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+            id_frame.pack(fill=tk.X, pady=PADDING_SMALL)
+            
+            id_label = tk.Label(id_frame, text="ID предмета:", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
+            id_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
+            
+            self.id_var = tk.StringVar(value=self.item_id)
+            id_entry = ttk.Entry(id_frame, textvariable=self.id_var, width=30)
+            id_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # ID товара
-        row = 0
-        id_label = tk.Label(form_frame, text="ID товара:", fg=LIGHT_TEXT, bg=DARK_SECONDARY)
-        id_label.grid(row=row, column=0, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
+        # Выбор между поиском предмета и вводом blueprint
+        method_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+        method_frame.pack(fill=tk.X, pady=PADDING_SMALL)
         
-        self.id_var = tk.StringVar(value=item_id or "")
-        id_entry = ttk.Entry(form_frame, textvariable=self.id_var, width=30)
-        id_entry.grid(row=row, column=1, sticky="ew", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
-        row += 1
+        self.method_var = tk.StringVar(value="search")
+        search_radio = ttk.Radiobutton(method_frame, text="Поиск предмета", variable=self.method_var, value="search", command=self.toggle_method)
+        search_radio.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
-        # Подсказка для ID
-        id_hint = tk.Label(
-            form_frame,
-            text="Уникальный идентификатор товара (например, '0001_Tool_Cryopod')",
-            fg=GRAY_TEXT,
-            bg=DARK_SECONDARY,
-            font=FONT_SMALL
-        )
-        id_hint.grid(row=row, column=0, columnspan=2, sticky="w", padx=(PADDING_LARGE, PADDING_MEDIUM))
-        row += 1
+        manual_radio = ttk.Radiobutton(method_frame, text="Ввод blueprint", variable=self.method_var, value="manual", command=self.toggle_method)
+        manual_radio.pack(side=tk.LEFT)
         
-        # Название товара
-        title_label = tk.Label(form_frame, text="Название:", fg=LIGHT_TEXT, bg=DARK_SECONDARY)
-        title_label.grid(row=row, column=0, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
+        # Фрейм для поиска предмета
+        self.search_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+        self.search_frame.pack(fill=tk.X, pady=PADDING_SMALL)
         
-        self.title_var = tk.StringVar(value=item_data.get("Title", "") if item_data else "")
-        title_entry = ttk.Entry(form_frame, textvariable=self.title_var, width=30)
-        title_entry.grid(row=row, column=1, sticky="ew", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
-        row += 1
+        search_label = tk.Label(self.search_frame, text="Поиск:", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
+        search_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
-        # Описание
-        desc_label = tk.Label(form_frame, text="Описание:", fg=LIGHT_TEXT, bg=DARK_SECONDARY)
-        desc_label.grid(row=row, column=0, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(self.search_frame, textvariable=self.search_var, width=30)
+        search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        self.desc_var = tk.StringVar(value=item_data.get("Description", "") if item_data else "")
-        desc_entry = ttk.Entry(form_frame, textvariable=self.desc_var, width=30)
-        desc_entry.grid(row=row, column=1, sticky="ew", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
-        row += 1
+        # Создаем listbox для отображения результатов
+        list_frame = tk.Frame(self.search_frame, bg=DARK_SECONDARY)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=PADDING_SMALL)
         
-        # Цена
-        price_label = tk.Label(form_frame, text="Цена:", fg=LIGHT_TEXT, bg=DARK_SECONDARY)
-        price_label.grid(row=row, column=0, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
+        self.items_listbox = tk.Listbox(list_frame, bg=DARK_BG, fg=LIGHT_TEXT, height=8)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.items_listbox.yview)
+        self.items_listbox.configure(yscrollcommand=scrollbar.set)
         
-        self.price_var = tk.StringVar(value=str(item_data.get("Price", 1)) if item_data else "1")
-        price_entry = ttk.Entry(form_frame, textvariable=self.price_var, width=10)
-        price_entry.grid(row=row, column=1, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
-        row += 1
+        self.items_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Исключить из скидок
-        self.exclude_discount_var = tk.BooleanVar(value=bool(item_data.get("Exclude_From_Discount", False)) if item_data else False)
-        exclude_checkbox = ttk.Checkbutton(
-            form_frame,
-            text="Исключить из скидок",
-            variable=self.exclude_discount_var
-        )
-        exclude_checkbox.grid(row=row, column=0, columnspan=2, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
-        row += 1
+        # Привязываем поиск к вводу текста
+        self.search_var.trace("w", self.filter_items)
         
-        # Категории
-        categories_label = tk.Label(form_frame, text="Категории:", fg=LIGHT_TEXT, bg=DARK_SECONDARY)
-        categories_label.grid(row=row, column=0, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
+        # Привязываем двойной клик к выбору предмета
+        self.items_listbox.bind("<Double-1>", self.select_item)
         
-        default_categories = []
-        if item_data and "Categories" in item_data:
-            default_categories = item_data["Categories"]
+        # Заполняем список всеми предметами изначально
+        self.populate_items_list()
         
-        self.categories_var = tk.StringVar(value=", ".join(default_categories))
-        categories_entry = ttk.Entry(form_frame, textvariable=self.categories_var, width=30)
-        categories_entry.grid(row=row, column=1, sticky="ew", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
-        row += 1
+        # Фрейм для ручного ввода blueprint
+        self.manual_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
         
-        # Подсказка для категорий
-        categories_hint = tk.Label(
-            form_frame,
-            text="Список категорий через запятую (например, 'Tools, Consumables')",
-            fg=GRAY_TEXT,
-            bg=DARK_SECONDARY,
-            font=FONT_SMALL
-        )
-        categories_hint.grid(row=row, column=0, columnspan=2, sticky="w", padx=(PADDING_LARGE, PADDING_MEDIUM))
-        row += 1
+        blueprint_label = tk.Label(self.manual_frame, text="Blueprint:", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
+        blueprint_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
-        # Разделитель
-        separator = ttk.Separator(form_frame, orient="horizontal")
-        separator.grid(row=row, column=0, columnspan=2, sticky="ew", padx=PADDING_MEDIUM, pady=PADDING_MEDIUM)
-        row += 1
+        self.blueprint_var = tk.StringVar()
+        blueprint_entry = ttk.Entry(self.manual_frame, textvariable=self.blueprint_var, width=50)
+        blueprint_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # Добавление предметов
-        items_label = tk.Label(
-            form_frame, 
-            text="Blueprint предмета:", 
-            fg=ORANGE_PRIMARY,
-            bg=DARK_SECONDARY,
-            font=FONT_SUBHEADER
-        )
-        items_label.grid(row=row, column=0, columnspan=2, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
-        row += 1
+        # Название предмета
+        name_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+        name_frame.pack(fill=tk.X, pady=PADDING_SMALL)
         
-        # Blueprint
-        self.blueprint_var = tk.StringVar(value="" if not item_data or not item_data.get("Items") else item_data["Items"][0].get("Blueprint", ""))
-        blueprint_entry = ttk.Entry(form_frame, textvariable=self.blueprint_var, width=60)
-        blueprint_entry.grid(row=row, column=0, columnspan=2, sticky="ew", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
-        row += 1
+        name_label = tk.Label(name_frame, text="Название:", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
+        name_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
-        # Кнопка выбора из ArkData
-        select_button = tk.Button(
-            form_frame,
-            text="Выбрать из базы данных",
-            bg=DARK_BG,
-            fg=LIGHT_TEXT,
-            command=self.open_blueprint_selector
-        )
-        select_button.grid(row=row, column=0, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
-        row += 1
+        self.name_var = tk.StringVar()
+        name_entry = ttk.Entry(name_frame, textvariable=self.name_var, width=50)
+        name_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # Количество
-        quantity_frame = tk.Frame(form_frame, bg=DARK_SECONDARY)
-        quantity_frame.grid(row=row, column=0, columnspan=2, sticky="w", padx=PADDING_MEDIUM, pady=PADDING_SMALL)
+        # Цена предмета
+        price_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+        price_frame.pack(fill=tk.X, pady=PADDING_SMALL)
         
-        amount_label = tk.Label(quantity_frame, text="Количество:", fg=LIGHT_TEXT, bg=DARK_SECONDARY)
+        price_label = tk.Label(price_frame, text="Цена:", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
+        price_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
+        
+        self.price_var = tk.StringVar(value="0")
+        price_entry = ttk.Entry(price_frame, textvariable=self.price_var, width=10)
+        price_entry.pack(side=tk.LEFT)
+        
+        # Количество предмета
+        amount_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+        amount_frame.pack(fill=tk.X, pady=PADDING_SMALL)
+        
+        amount_label = tk.Label(amount_frame, text="Количество:", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
         amount_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
-        # Значение по умолчанию для количества
-        default_amount = 1
-        if item_data and item_data.get("Items") and len(item_data["Items"]) > 0:
-            default_amount = item_data["Items"][0].get("Amount", 1)
-            
-        self.amount_var = tk.StringVar(value=str(default_amount))
-        amount_entry = ttk.Entry(quantity_frame, textvariable=self.amount_var, width=5)
-        amount_entry.pack(side=tk.LEFT, padx=(0, PADDING_MEDIUM))
+        self.amount_var = tk.StringVar(value="1")
+        amount_entry = ttk.Entry(amount_frame, textvariable=self.amount_var, width=10)
+        amount_entry.pack(side=tk.LEFT)
         
-        # Качество
-        quality_label = tk.Label(quantity_frame, text="Качество:", fg=LIGHT_TEXT, bg=DARK_SECONDARY)
+        # Качество предмета
+        quality_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+        quality_frame.pack(fill=tk.X, pady=PADDING_SMALL)
+        
+        quality_label = tk.Label(quality_frame, text="Качество (0-5):", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
         quality_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
-        # Значение по умолчанию для качества
-        default_quality = 0
-        if item_data and item_data.get("Items") and len(item_data["Items"]) > 0:
-            default_quality = item_data["Items"][0].get("Quality", 0)
-            
-        self.quality_var = tk.StringVar(value=str(default_quality))
-        quality_entry = ttk.Entry(quantity_frame, textvariable=self.quality_var, width=5)
-        quality_entry.pack(side=tk.LEFT, padx=(0, PADDING_MEDIUM))
+        self.quality_var = tk.StringVar(value="0")
+        quality_entry = ttk.Entry(quality_frame, textvariable=self.quality_var, width=10)
+        quality_entry.pack(side=tk.LEFT)
         
-        # Чертеж
-        default_force_bp = False
-        if item_data and item_data.get("Items") and len(item_data["Items"]) > 0:
-            default_force_bp = item_data["Items"][0].get("ForceBlueprint", False)
-            
-        self.force_bp_var = tk.BooleanVar(value=default_force_bp)
-        force_bp_check = ttk.Checkbutton(quantity_frame, text="Чертёж", variable=self.force_bp_var)
-        force_bp_check.pack(side=tk.LEFT)
-        row += 1
+        # Категория предмета
+        category_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+        category_frame.pack(fill=tk.X, pady=PADDING_SMALL)
         
-        # Настройка весов для правильного растяжения
-        form_frame.grid_columnconfigure(1, weight=1)
+        category_label = tk.Label(category_frame, text="Категория:", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
+        category_label.pack(side=tk.LEFT, padx=(0, PADDING_SMALL))
         
-        # Фрейм с кнопками
-        buttons_frame = tk.Frame(self.dialog, bg=DARK_SECONDARY)
-        buttons_frame.pack(fill=tk.X, padx=PADDING_MEDIUM, pady=PADDING_MEDIUM)
+        categories = [
+            "Weapons", "Dye", "Dinosaurs", "Armor", 
+            "Structures", "Consumables", "Chibis", "Maps"
+        ]
         
-        # Кнопка отмены
+        self.category_var = tk.StringVar(value=categories[0])
+        category_combobox = ttk.Combobox(category_frame, textvariable=self.category_var, values=categories)
+        category_combobox.pack(side=tk.LEFT)
+        
+        # Дополнительные настройки в чекбоксах
+        options_frame = tk.LabelFrame(main_frame, text="Дополнительные настройки", bg=DARK_SECONDARY, fg=LIGHT_TEXT)
+        options_frame.pack(fill=tk.X, pady=PADDING_SMALL)
+        
+        self.force_blueprint_var = tk.BooleanVar(value=False)
+        force_blueprint_cb = ttk.Checkbutton(
+            options_frame, 
+            text="Принудительно чертеж", 
+            variable=self.force_blueprint_var
+        )
+        force_blueprint_cb.pack(anchor="w")
+        
+        self.hide_until_unlocked_var = tk.BooleanVar(value=False)
+        hide_until_unlocked_cb = ttk.Checkbutton(
+            options_frame, 
+            text="Скрыть до разблокировки", 
+            variable=self.hide_until_unlocked_var
+        )
+        hide_until_unlocked_cb.pack(anchor="w")
+        
+        self.block_in_buildings_var = tk.BooleanVar(value=False)
+        block_in_buildings_cb = ttk.Checkbutton(
+            options_frame, 
+            text="Блокировать в постройках", 
+            variable=self.block_in_buildings_var
+        )
+        block_in_buildings_cb.pack(anchor="w")
+        
+        self.block_in_enemy_territory_var = tk.BooleanVar(value=False)
+        block_in_enemy_territory_cb = ttk.Checkbutton(
+            options_frame, 
+            text="Блокировать на территории врага", 
+            variable=self.block_in_enemy_territory_var
+        )
+        block_in_enemy_territory_cb.pack(anchor="w")
+        
+        # Кнопки внизу
+        buttons_frame = tk.Frame(main_frame, bg=DARK_SECONDARY)
+        buttons_frame.pack(fill=tk.X, pady=PADDING_SMALL, side=tk.BOTTOM)
+        
         cancel_button = tk.Button(
-            buttons_frame,
-            text="Отмена",
-            bg=DARK_BG,
+            buttons_frame, 
+            text="Отмена", 
+            bg=BUTTON_BG, 
             fg=LIGHT_TEXT,
             command=self.dialog.destroy
         )
         cancel_button.pack(side=tk.RIGHT, padx=(PADDING_SMALL, 0))
         
-        # Кнопка сохранения
         save_button = tk.Button(
-            buttons_frame,
-            text="Сохранить",
-            bg=DARK_BG,
-            fg=LIGHT_TEXT,
+            buttons_frame, 
+            text="Сохранить", 
+            bg=ORANGE_PRIMARY, 
+            fg=DARK_BG,
             command=self.save_item
         )
         save_button.pack(side=tk.RIGHT)
         
-        # Ждем закрытия диалога
-        self.dialog.wait_window()
+        # Изначально показываем фрейм поиска
+        self.toggle_method()
+
+    def populate_items_list(self):
+        """Заполнение списка всеми доступными предметами"""
+        self.items_listbox.delete(0, tk.END)
+        
+        if not self.ark_data or "items" not in self.ark_data:
+            return
+            
+        sorted_items = sorted(self.ark_data.get("items", {}).keys())
+        for item_name in sorted_items:
+            self.items_listbox.insert(tk.END, item_name)
     
-    def open_blueprint_selector(self):
-        """Открывает диалог выбора Blueprint из ArkData"""
-        BlueprintSelectorDialog(self.dialog, self.ark_data, self.blueprint_var)
+    def filter_items(self, *args):
+        """Фильтрация предметов по поисковому запросу"""
+        search_term = self.search_var.get().lower()
+        self.items_listbox.delete(0, tk.END)
+        
+        # Если поисковый запрос пуст, показываем все предметы
+        if not search_term:
+            self.populate_items_list()
+            return
+            
+        if not self.ark_data or "items" not in self.ark_data:
+            return
+            
+        items = self.ark_data.get("items", {})
+        
+        # Ищем совпадения
+        matching_items = [name for name in items.keys() if search_term in name.lower()]
+                
+        # Сортируем и добавляем в список
+        for item_name in sorted(matching_items):
+            self.items_listbox.insert(tk.END, item_name)
+            
+    def select_item(self, event=None):
+        """Выбор предмета из списка"""
+        selected_indices = self.items_listbox.curselection()
+        if not selected_indices:
+            return
+            
+        item_name = self.items_listbox.get(selected_indices[0])
+        if "items" not in self.ark_data or item_name not in self.ark_data.get("items", {}):
+            return
+            
+        item_info = self.ark_data["items"][item_name]
+        
+        # Заполняем поля данными предмета
+        self.blueprint_var.set(item_info.get("blueprint", ""))
+        if not self.name_var.get():  # Если имя не задано, используем имя из ArkData
+            self.name_var.set(item_name)
+
+    def toggle_method(self):
+        """Переключение между поиском и ручным вводом"""
+        method = self.method_var.get()
+        
+        if method == "search":
+            self.search_frame.pack(fill=tk.X, pady=PADDING_SMALL)
+            if hasattr(self, "manual_frame") and self.manual_frame.winfo_exists():
+                self.manual_frame.pack_forget()
+        else:
+            if hasattr(self, "search_frame") and self.search_frame.winfo_exists():
+                self.search_frame.pack_forget()
+            self.manual_frame.pack(fill=tk.X, pady=PADDING_SMALL)
+    
+    def fill_form_with_item_data(self):
+        """Заполнение формы данными существующего предмета"""
+        self.blueprint_var.set(self.item_data.get("Blueprint", ""))
+        self.name_var.set(self.item_data.get("Name", ""))
+        self.price_var.set(str(self.item_data.get("Price", 0)))
+        self.amount_var.set(str(self.item_data.get("Amount", 1)))
+        self.quality_var.set(str(self.item_data.get("Quality", 0)))
+        self.category_var.set(self.item_data.get("Category", "Weapons"))
+        
+        # Дополнительные настройки
+        self.force_blueprint_var.set(self.item_data.get("ForceBlueprint", False))
+        self.hide_until_unlocked_var.set(self.item_data.get("HideUntilUnlocked", False))
+        self.block_in_buildings_var.set(self.item_data.get("BlockInBuildings", False))
+        self.block_in_enemy_territory_var.set(self.item_data.get("BlockInEnemyTerritory", False))
     
     def save_item(self):
-        """Сохраняет данные о товаре и закрывает окно"""
+        """Сохранение данных предмета"""
+        # Проверка ID
+        item_id = self.id_var.get().strip()
+        if not item_id:
+            messagebox.showerror("Ошибка", "ID предмета не может быть пустым")
+            return
+            
+        # Проверка Blueprint
+        blueprint = self.blueprint_var.get().strip()
+        if not blueprint:
+            messagebox.showerror("Ошибка", "Blueprint не может быть пустым")
+            return
+            
+        # Проверка названия
+        name = self.name_var.get().strip()
+        if not name:
+            messagebox.showerror("Ошибка", "Название не может быть пустым")
+            return
+            
+        # Проверка цены
         try:
-            # Проверяем заполнение обязательных полей
-            if not self.id_var.get().strip():
-                messagebox.showerror("Ошибка", "ID товара не может быть пустым")
+            price = int(self.price_var.get())
+            if price < 0:
+                messagebox.showerror("Ошибка", "Цена не может быть отрицательной")
                 return
+        except ValueError:
+            messagebox.showerror("Ошибка", "Цена должна быть целым числом")
+            return
             
-            if not self.title_var.get().strip():
-                messagebox.showerror("Ошибка", "Название товара не может быть пустым")
+        # Проверка количества
+        try:
+            amount = int(self.amount_var.get())
+            if amount < 1:
+                messagebox.showerror("Ошибка", "Количество должно быть не меньше 1")
                 return
+        except ValueError:
+            messagebox.showerror("Ошибка", "Количество должно быть целым числом")
+            return
             
-            if not self.blueprint_var.get().strip():
-                messagebox.showerror("Ошибка", "Blueprint не может быть пустым")
+        # Проверка качества
+        try:
+            quality = int(self.quality_var.get())
+            if quality < 0 or quality > 5:
+                messagebox.showerror("Ошибка", "Качество должно быть в диапазоне от 0 до 5")
                 return
+        except ValueError:
+            messagebox.showerror("Ошибка", "Качество должно быть целым числом")
+            return
             
-            # Проверяем числовые поля
-            try:
-                price = int(self.price_var.get())
-                amount = int(self.amount_var.get())
-                quality = int(self.quality_var.get())
-            except ValueError:
-                messagebox.showerror("Ошибка", "Цена, количество и качество должны быть целыми числами")
-                return
-            
-            # Формируем список категорий из строки
-            categories = [cat.strip() for cat in self.categories_var.get().split(",") if cat.strip()]
-            
-            # Формируем предмет
-            item = {
-                "Blueprint": self.blueprint_var.get(),
-                "Amount": amount,
-                "Quality": quality,
-                "ForceBlueprint": self.force_bp_var.get()
-            }
-            
-            # Формируем данные товара
-            item_data = {
-                "Title": self.title_var.get(),
-                "Categories": categories,
-                "Description": self.desc_var.get(),
-                "Price": price,
-                "Exclude_From_Discount": self.exclude_discount_var.get(),
-                "Items": [item],
-                "Dinos": [],
-                "ConsoleCommands": [],
-                "PermissionGroupRequired": [],
-                "Only_On_These_Maps": [],
-                "NOT_On_These_Maps": []
-            }
-            
-            # Сохраняем результат
-            self.result = {
-                "id": self.id_var.get(),
-                "data": item_data
-            }
-            
-            # Закрываем окно
-            self.dialog.destroy()
-            
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при сохранении товара: {str(e)}")
+        # Формируем данные предмета
+        item_data = {
+            "Blueprint": blueprint,
+            "Name": name,
+            "Price": price,
+            "Amount": amount,
+            "Quality": quality,
+            "Category": self.category_var.get(),
+            "ForceBlueprint": self.force_blueprint_var.get(),
+            "HideUntilUnlocked": self.hide_until_unlocked_var.get(),
+            "BlockInBuildings": self.block_in_buildings_var.get(),
+            "BlockInEnemyTerritory": self.block_in_enemy_territory_var.get()
+        }
+        
+        # Сохраняем данные
+        self.result = (item_id, item_data)
+        self.dialog.destroy()
+        if self.on_save:
+            self.on_save(item_id, item_data)
 
 
 class BlueprintSelectorDialog:

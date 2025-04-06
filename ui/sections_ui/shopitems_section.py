@@ -66,8 +66,8 @@ class ShopItemsSection(BaseSection):
             command=self.add_shop_item
         )
         add_button.pack(side=tk.RIGHT)
-
-        # Кнопка для редактирования предмета
+        
+        # Кнопки для редактирования и удаления предмета
         edit_button = tk.Button(
             search_frame,
             text="Редактировать",
@@ -76,6 +76,15 @@ class ShopItemsSection(BaseSection):
             command=self.edit_shop_item
         )
         edit_button.pack(side=tk.RIGHT, padx=PADDING_SMALL)
+        
+        delete_button = tk.Button(
+            search_frame,
+            text="Удалить",
+            bg=BUTTON_BG,
+            fg=LIGHT_TEXT,
+            command=self.delete_shop_item
+        )
+        delete_button.pack(side=tk.RIGHT, padx=PADDING_SMALL)
         
         # Создаем список предметов
         self.items_listbox = tk.Listbox(scrollable_frame, bg=DARK_BG, fg=LIGHT_TEXT, height=25, width=80)
@@ -108,6 +117,10 @@ class ShopItemsSection(BaseSection):
         self.items_listbox.delete(0, tk.END)
         
         shop_items = memory_config.get("ShopItems", {})
+        
+        # Очищаем данные
+        self.shop_items_data = {}
+        
         for item_id, item_data in shop_items.items():
             display_name = item_data.get("Name", "Без имени")
             price = item_data.get("Price", 0)
@@ -150,6 +163,28 @@ class ShopItemsSection(BaseSection):
             item_data,
             item_id
         )
+    
+    def delete_shop_item(self):
+        """Удаляет выбранный предмет из магазина"""
+        selected_index = self.items_listbox.curselection()
+        if not selected_index:
+            messagebox.showinfo("Информация", "Выберите предмет для удаления")
+            return
+            
+        selected_text = self.items_listbox.get(selected_index)
+        item_id, _ = self.shop_items_data.get(selected_text, (None, None))
+        
+        if not item_id:
+            messagebox.showerror("Ошибка", "Не удалось найти данные предмета")
+            return
+            
+        # Запрашиваем подтверждение удаления
+        if messagebox.askyesno("Подтверждение", f"Вы уверены, что хотите удалить предмет '{item_id}'?"):
+            shop_items = memory_config.get("ShopItems", {})
+            if item_id in shop_items:
+                del shop_items[item_id]
+                memory_config["ShopItems"] = shop_items
+                self.load_shop_items()
     
     def save_new_item(self, item_id, item_data):
         """Сохраняет новый предмет в конфигурацию"""
