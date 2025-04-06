@@ -5,6 +5,7 @@ BUTTON_BG = "#333333"
 ORANGE_PRIMARY = "#FF8C00"
 LIGHT_TEXT = "#E0E0E0"
 GRAY_TEXT = "#A0A0A0"
+RED_BTN = "#FF0000"
 
 # Шрифты
 FONT_HEADER = ("Segoe UI", 16, "bold")

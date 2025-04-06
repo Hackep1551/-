@@ -4,6 +4,7 @@ import json
 import os
 from ui.constants import *
 from ui.sections_ui.base_section import BaseSection
+from ui.dialogs.shop_item_dialog import ShopItemDialog
 from utils.memory_storage import memory_config
 
 class ShopItemsSection(BaseSection):
@@ -12,7 +13,7 @@ class ShopItemsSection(BaseSection):
     def setup_ui(self):
         """Настройка интерфейса для ShopItemsSection"""
         # Загружаем данные о предметах из файла ArkData.json
-        self.items_data = {}
+        self.ark_data = {}
         self.load_ark_data()
         
         # Создаем основной контейнер
@@ -115,10 +116,10 @@ class ShopItemsSection(BaseSection):
             data_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ArkData.json")
             if os.path.exists(data_path):
                 with open(data_path, 'r', encoding='utf-8') as file:
-                    ark_data = json.load(file)
-                    self.items_data = ark_data.get("items", {})
+                    self.ark_data = json.load(file)
         except Exception as e:
             print(f"Ошибка при загрузке данных из ArkData.json: {e}")
+            self.ark_data = {"items": {}, "creatures": {}}
     
     def populate_items_tree(self):
         """Заполняет таблицу предметами из конфигурации"""
@@ -127,22 +128,23 @@ class ShopItemsSection(BaseSection):
             self.items_tree.delete(item)
         
         # Получаем предметы из конфигурации
-        shop_items = self.config_data or {}
+        shop_items = memory_config.get("ShopItems", {})
         
         # Заполняем таблицу данными
         for item_id, item_data in shop_items.items():
+            categories = ", ".join(item_data.get("Categories", []))
             self.items_tree.insert("", "end", values=(
                 item_id,
-                item_data.get("Name", ""),
+                item_data.get("Title", ""),
                 item_data.get("Price", 0),
-                item_data.get("Category", ""),
+                categories,
                 item_data.get("Description", "")
             ))
     
     def add_shop_item(self):
         """Добавляет новый предмет в магазин"""
-        # Здесь будет реализована функция добавления предмета
-        messagebox.showinfo("Информация", "Функция добавления предмета будет реализована позже")
+        # Открываем диалоговое окно для добавления товара
+        dialog = ShopItemDialog(self.parent, self.ark_data, self.save_new_item)
     
     def edit_shop_item(self):
         """Редактирует выбранный предмет магазина"""
@@ -152,8 +154,63 @@ class ShopItemsSection(BaseSection):
             messagebox.showinfo("Информация", "Выберите предмет для редактирования")
             return
         
-        # Здесь будет реализована функция редактирования предмета
-        messagebox.showinfo("Информация", "Функция редактирования предмета будет реализована позже")
+        # Получаем ID выбранного предмета
+        item_id = self.items_tree.item(selected[0])["values"][0]
+        
+        # Проверяем, существует ли такой предмет в конфигурации
+        shop_items = memory_config.get("ShopItems", {})
+        if item_id not in shop_items:
+            messagebox.showerror("Ошибка", f"Предмет с ID '{item_id}' не найден в конфигурации")
+            return
+        
+        # Открываем диалоговое окно для редактирования товара
+        dialog = ShopItemDialog(
+            self.parent,
+            self.ark_data,
+            lambda new_id, item_data: self.save_edited_item(item_id, new_id, item_data),
+            shop_items[item_id],
+            item_id
+        )
+    
+    def save_new_item(self, item_id, item_data):
+        """Сохраняет новый товар в конфигурацию"""
+        shop_items = memory_config.get("ShopItems", {})
+        
+        # Проверяем, существует ли товар с таким ID
+        if item_id in shop_items:
+            if not messagebox.askyesno("Предупреждение", f"Товар с ID '{item_id}' уже существует. Перезаписать?"):
+                return
+        
+        # Сохраняем товар в конфигурацию
+        shop_items[item_id] = item_data
+        memory_config["ShopItems"] = shop_items
+        
+        # Обновляем таблицу
+        self.populate_items_tree()
+        
+        messagebox.showinfo("Информация", f"Товар '{item_id}' успешно добавлен")
+    
+    def save_edited_item(self, old_id, new_id, item_data):
+        """Сохраняет отредактированный товар в конфигурацию"""
+        shop_items = memory_config.get("ShopItems", {})
+        
+        # Если ID изменился и новый ID уже существует
+        if old_id != new_id and new_id in shop_items:
+            if not messagebox.askyesno("Предупреждение", f"Товар с ID '{new_id}' уже существует. Перезаписать?"):
+                return
+        
+        # Удаляем старый товар
+        if old_id in shop_items:
+            del shop_items[old_id]
+        
+        # Сохраняем товар с новым ID
+        shop_items[new_id] = item_data
+        memory_config["ShopItems"] = shop_items
+        
+        # Обновляем таблицу
+        self.populate_items_tree()
+        
+        messagebox.showinfo("Информация", f"Товар '{new_id}' успешно обновлен")
     
     def duplicate_shop_item(self):
         """Дублирует выбранный предмет магазина"""
