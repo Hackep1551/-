@@ -8,7 +8,7 @@ FONT_REGULAR = ("Arial", 12)  # Example font definition, adjust as needed
 class KitConsoleCommandDialog:
     """Диалоговое окно для добавления/редактирования консольных команд в китах"""
     
-    def __init__(self, parent, on_save=None, command_data=None):
+    def __init__(self, parent, on_save=None, command_data=None, command_index=None, commands_list=None):
         """
         Инициализация диалогового окна
         
@@ -16,14 +16,21 @@ class KitConsoleCommandDialog:
             parent: родительское окно
             on_save: функция обратного вызова при сохранении
             command_data: данные о редактируемой команде (если редактирование)
+            command_index: индекс команды в списке (если редактирование)
+            commands_list: существующий список команд
         """
         self.parent = parent
         self.on_save = on_save
         self.command_data = command_data or ""
+        self.command_index = command_index
+        self.commands_list = commands_list or []
+        
+        # Проверяем структуру списка команд и исправляем ее если необходимо
+        self._normalize_commands_list()
         
         # Создаем диалоговое окно
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("Добавить консольную команду" if not command_data else "Редактировать консольную команду")
+        self.dialog.title("Добавить консольную команду" if command_index is None else "Редактировать консольную команду")
         self.dialog.geometry("600x200")
         self.dialog.configure(bg=DARK_SECONDARY)
         self.dialog.resizable(True, False)
@@ -42,6 +49,29 @@ class KitConsoleCommandDialog:
         if self.command_data:
             self.command_var.set(self.command_data)
     
+    def _normalize_commands_list(self):
+        """Проверяет и нормализует структуру списка команд"""
+        # Если список пустой, создаем новый
+        if not self.commands_list:
+            self.commands_list = []
+        # Если список имеет неправильную структуру (вложенные списки), исправляем
+        elif isinstance(self.commands_list, list):
+            # Проверяем на вложенные списки и исправляем их
+            normalized_list = []
+            for item in self.commands_list:
+                if isinstance(item, list):
+                    # Если это вложенный список, извлекаем строки
+                    for subitem in item:
+                        if isinstance(subitem, list):
+                            for subsubitem in subitem:
+                                if isinstance(subsubitem, str):
+                                    normalized_list.append(subsubitem)
+                        elif isinstance(subitem, str):
+                            normalized_list.append(subitem)
+                elif isinstance(item, str):
+                    normalized_list.append(item)
+            self.commands_list = normalized_list
+
     def setup_ui(self):
         """Настройка пользовательского интерфейса"""
         # Основной контейнер
@@ -104,7 +134,21 @@ class KitConsoleCommandDialog:
             messagebox.showwarning("Предупреждение", "Команда не может быть пустой")
             return
         
+        # Работаем со списком команд
+        if self.command_index is not None:
+            # Редактирование существующей команды
+            if 0 <= self.command_index < len(self.commands_list):
+                # Сохраняем команду в список только для внутреннего использования
+                self.commands_list[self.command_index] = command
+            else:
+                messagebox.showerror("Ошибка", "Неверный индекс команды")
+                return
+        else:
+            # Добавление новой команды (для внутреннего использования)
+            self.commands_list.append(command)
+        
         # Закрываем диалог и вызываем callback
         self.dialog.destroy()
         if self.on_save:
+            # Возвращаем только текущую команду, а не весь список
             self.on_save(command)

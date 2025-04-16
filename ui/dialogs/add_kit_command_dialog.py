@@ -185,4 +185,10 @@ class AddKitCommandDialog:
         """Сохраняет все команды и закрывает диалог"""
         self.dialog.destroy()
         if self.on_save:
-            self.on_save(self.commands_list)
+            # Проверяем, указана ли одна команда или это был список команд
+            # Если команда одна строка, то передаём её напрямую
+            # Если это список строк, то передаём его
+            if len(self.commands_list) == 1 and isinstance(self.commands_list[0], str):
+                self.on_save(self.commands_list[0])
+            else:
+                self.on_save(self.commands_list)
